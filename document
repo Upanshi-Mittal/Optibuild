@@ -1,0 +1,4 @@
+today i have made a dummy project to visualize how project will work
+
+dependency is 
+utils → database → auth → billing
