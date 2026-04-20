@@ -61,11 +61,9 @@ vector<string> findImpacted(const vector<string>& changedFiles) {
 int main() {
     loadGraph("dependency_graph.cache");
 
-    // 🔥 simulate change
-    vector<string> changed = {
-        "/Users/luna/Desktop/optibuild/src/database/database.h"
-    };
-
+vector<string> changed = {
+    "/Users/luna/Desktop/optibuild/src/database/database.h"
+};
     auto impacted = findImpacted(changed);
     ofstream out("impacted_files.txt");
 
