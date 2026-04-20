@@ -1,0 +1,20 @@
+# Build folder
+build/
+
+# CMake files
+CMakeFiles/
+CMakeCache.txt
+cmake_install.cmake
+Makefile
+
+# Executables
+*.out
+main
+test_runner
+graph_builder
+impact_analyzer
+build_optimizer
+
+# Cache files
+*.cache
+impacted_files.txt

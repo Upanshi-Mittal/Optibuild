@@ -1,4 +1,8 @@
-#pragma once
+#ifndef UTILS_H
+#define UTILS_H
+
 #include <string>
 
-std::string getUtilMessage();
+std::string hashPassword(const std::string& password);
+
+#endif

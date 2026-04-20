@@ -1,4 +1,6 @@
-#pragma once
-#include <string>
+#ifndef BILLING_H
+#define BILLING_H
 
-std::string processPayment();
+void processPayment(double amount);
+
+#endif

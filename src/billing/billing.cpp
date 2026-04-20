@@ -1,6 +1,8 @@
 #include "billing.h"
-#include "../auth/auth.h"
+#include "../database/database.h"
+#include "../utils/utils.h"
+#include <iostream>
 
-std::string processPayment() {
-    return "Payment Done after " + authenticate();
+void processPayment(double amount) {
+    std::cout << "Processing payment: " << amount << std::endl;
 }

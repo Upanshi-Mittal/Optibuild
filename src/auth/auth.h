@@ -1,4 +1,9 @@
-#pragma once
+#ifndef AUTH_H
+#define AUTH_H
+
 #include <string>
 
-std::string authenticate();
+bool login(const std::string& username, const std::string& password);
+void signup(const std::string& username, const std::string& password);
+
+#endif
