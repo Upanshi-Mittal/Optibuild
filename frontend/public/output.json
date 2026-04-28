@@ -1,0 +1,7 @@
+{
+  "built_files": [
+    "src/billing/billing.cpp",
+    "src/auth/auth.cpp",
+    "src/database/database.cpp"
+  ]
+}

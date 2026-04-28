@@ -1,0 +1,14 @@
+{
+  "edges": [
+    { "from": "src/auth/auth.cpp", "to": "src/auth/auth.h" },
+    { "from": "src/auth/auth.cpp", "to": "src/database/database.h" },
+    { "from": "src/auth/auth.cpp", "to": "src/utils/utils.h" },
+    { "from": "src/utils/utils.cpp", "to": "src/utils/utils.h" },
+    { "from": "src/database/database.cpp", "to": "src/database/database.h" },
+    { "from": "src/main.cpp", "to": "src/auth/auth.h" },
+    { "from": "src/main.cpp", "to": "src/billing/billing.h" },
+    { "from": "src/billing/billing.cpp", "to": "src/billing/billing.h" },
+    { "from": "src/billing/billing.cpp", "to": "src/database/database.h" },
+    { "from": "src/billing/billing.cpp", "to": "src/utils/utils.h" }
+  ]
+}

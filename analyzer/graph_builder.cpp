@@ -30,18 +30,15 @@ vector<string> extractIncludes(const string& filepath) {
     }
     return includes;
 }
-
-// Build graph from src/
 void buildGraph(const string& rootDir) {
     for (auto& p : fs::recursive_directory_iterator(rootDir)) {
         if (p.path().extension() == ".cpp" || p.path().extension() == ".h") {
-            string file = p.path().string();
+            string file = fs::weakly_canonical(p.path()).string();
             graph[file] = extractIncludes(file);
         }
     }
 }
 
-// Print graph
 void printGraph() {
     for (auto& [file, deps] : graph) {
         cout << file << " -> ";
@@ -52,7 +49,6 @@ void printGraph() {
     }
 }
 
-// Save graph to file (cache)
 void saveGraph(const string& filename) {
     ofstream out(filename);
     for (auto& [file, deps] : graph) {
@@ -66,9 +62,7 @@ void saveGraph(const string& filename) {
 
 int main() {
     string srcPath = "../src";
-
     buildGraph(srcPath);
-
     cout << "\n=== Dependency Graph ===\n";
     printGraph();
 

@@ -10,7 +10,7 @@ bool login(const std::string& username, const std::string& password) {
     }
     return false;
 }
-
+// 
 void signup(const std::string& username, const std::string& password) {
     std::string hashed = hashPassword(password);
     saveUser(username);

@@ -5,40 +5,35 @@
 #include <queue>
 #include <algorithm>
 #include <unordered_map>
+#include <unordered_set>
+#include <chrono>
 
 using namespace std;
 
-// 🌐 Global graph
 unordered_map<string, vector<string>> graph;
 
-// 🔁 Topological Sort
+// 🔁 Topo Sort
 vector<string> topoSort(unordered_map<string, vector<string>>& graph) {
     unordered_map<string, int> indegree;
 
     for (auto& [u, deps] : graph) {
         if (!indegree.count(u)) indegree[u] = 0;
-        for (auto& v : deps) {
-            indegree[v]++;
-        }
+        for (auto& v : deps) indegree[v]++;
     }
 
     queue<string> q;
-
-    for (auto& [node, deg] : indegree) {
+    for (auto& [node, deg] : indegree)
         if (deg == 0) q.push(node);
-    }
 
     vector<string> order;
 
     while (!q.empty()) {
-        string u = q.front();
-        q.pop();
+        string u = q.front(); q.pop();
         order.push_back(u);
 
         for (auto& v : graph[u]) {
-            if (--indegree[v] == 0) {
+            if (--indegree[v] == 0)
                 q.push(v);
-            }
         }
     }
 
@@ -59,10 +54,8 @@ void loadGraph(const string& filename) {
         size_t start = pos;
         while (start != string::npos) {
             size_t next = line.find("|", start + 1);
-
             string dep = line.substr(start + 1, next - start - 1);
             graph[fileNode].push_back(dep);
-
             start = next;
         }
     }
@@ -71,10 +64,9 @@ void loadGraph(const string& filename) {
 int main() {
     cout << "\n=== Selective Build ===\n";
 
-    // 🔥 Load graph
     loadGraph("dependency_graph.cache");
 
-    // 📄 Read impacted files
+    // 📄 impacted files
     vector<string> impacted;
     ifstream in("impacted_files.txt");
     string line;
@@ -83,19 +75,27 @@ int main() {
         impacted.push_back(line);
     }
 
-    // 🔁 Topological order
+    unordered_set<string> impactedSet(impacted.begin(), impacted.end());
+
     auto order = topoSort(graph);
 
-    // ⚡ Build only impacted files
+    int totalFiles = 0;
+    int builtFiles = 0;
+
+    // ⏱ start timer
+    auto start = chrono::high_resolution_clock::now();
+
     for (auto& file : order) {
 
-        // 🔥 FIXED matching (important)
-        bool isImpacted = false;
+        if (file.find(".cpp") != string::npos)
+            totalFiles++;
 
         size_t pos = file.find("src/");
         if (pos == string::npos) continue;
 
-        string shortPath = file.substr(pos); // src/...
+        string shortPath = file.substr(pos);
+
+        bool isImpacted = false;
 
         for (auto& f : impacted) {
             if (f.find(shortPath) != string::npos) {
@@ -105,16 +105,88 @@ int main() {
         }
 
         if (!isImpacted) continue;
-
         if (file.find(".cpp") == string::npos) continue;
 
-        string relative = shortPath;
+        cout << "✔ Building: " << shortPath << endl;
 
-        cout << "✔ Building: " << relative << endl;
-
-        string cmd = "make CMakeFiles/main.dir/" + relative + ".o";
+        string cmd = "make CMakeFiles/main.dir/" + shortPath + ".o";
         system(cmd.c_str());
+
+        builtFiles++;
     }
+
+    // ⏱ end timer
+    auto end = chrono::high_resolution_clock::now();
+    double timeTaken = chrono::duration<double>(end - start).count();
+
+    double optimization = 0;
+    if (totalFiles > 0)
+        optimization = 100.0 * (totalFiles - builtFiles) / totalFiles;
+
+    // =========================
+    // 📊 OUTPUT.JSON
+    // =========================
+
+    ofstream json("../frontend/public/output.json");
+
+    json << "{\n";
+    json << "  \"built_files\": [\n";
+
+    bool first = true;
+
+    for (auto& file : order) {
+        size_t pos = file.find("src/");
+        if (pos == string::npos) continue;
+
+        string shortPath = file.substr(pos);
+
+        for (auto& f : impacted) {
+            if (f.find(shortPath) != string::npos && file.find(".cpp") != string::npos) {
+                if (!first) json << ",\n";
+                json << "    \"" << shortPath << "\"";
+                first = false;
+            }
+        }
+    }
+
+    json << "\n  ],\n";
+    json << "  \"total_files\": " << totalFiles << ",\n";
+    json << "  \"built_count\": " << builtFiles << ",\n";
+    json << "  \"optimization\": " << optimization << ",\n";
+    json << "  \"time_taken\": " << timeTaken << "\n";
+    json << "}\n";
+
+    json.close();
+
+    //  GRAPH.JSON
+
+    ofstream graphJson("../frontend/public/graph.json");
+
+    graphJson << "{\n  \"edges\": [\n";
+
+    first = true;
+
+    for (auto& [file, deps] : graph) {
+        size_t pos = file.find("src/");
+        if (pos == string::npos) continue;
+
+        string from = file.substr(pos);
+
+        for (auto& dep : deps) {
+            size_t dpos = dep.find("src/");
+            if (dpos == string::npos) continue;
+
+            string to = dep.substr(dpos);
+
+            if (!first) graphJson << ",\n";
+
+            graphJson << "    { \"from\": \"" << from << "\", \"to\": \"" << to << "\" }";
+            first = false;
+        }
+    }
+
+    graphJson << "\n  ]\n}\n";
+    graphJson.close();
 
     return 0;
 }
