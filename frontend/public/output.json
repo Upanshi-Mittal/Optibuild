@@ -1,7 +1,9 @@
 {
   "built_files": [
-    "src/billing/billing.cpp",
-    "src/auth/auth.cpp",
-    "src/database/database.cpp"
-  ]
+    "src/billing/billing.cpp"
+  ],
+  "total_files": 5,
+  "built_count": 1,
+  "optimization": 80,
+  "time_taken": 0.0217142
 }

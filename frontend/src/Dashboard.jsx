@@ -6,14 +6,18 @@ export default function Dashboard() {
     const [graph, setGraph] = useState(null);
 
     useEffect(() => {
-        Promise.all([
-            fetch("/output.json").then(res => res.json()),
-            fetch("/graph.json").then(res => res.json())
-        ])
-            .then(([output, graphData]) => {
-                setData(output);
-                setGraph(graphData);
-            });
+        const interval = setInterval(() => {
+            Promise.all([
+                fetch("/output.json").then(res => res.json()),
+                fetch("/graph.json").then(res => res.json())
+            ])
+                .then(([output, graphData]) => {
+                    setData(output);
+                    setGraph(graphData);
+                });
+        }, 2000);
+
+        return () => clearInterval(interval);
     }, []);
 
     if (!data || !graph) return <p>Loading...</p>;
@@ -25,10 +29,10 @@ export default function Dashboard() {
             <h1> OptiBuild Dashboard</h1>
 
             <div className="card"> <h3>Built Files</h3>
-                <ul style={{ listStyle: "none", padding: 0 }}>        
+                <ul style={{ listStyle: "none", padding: 0 }}>
                     {uniqueFiles.map((file, i) => (
-                    <li key={i}>{file}</li>
-                ))}
+                        <li key={i}>{file}</li>
+                    ))}
                 </ul>
             </div>
 
@@ -37,8 +41,8 @@ export default function Dashboard() {
 
 
                 <h3> Stats</h3>
-                <p> Total Files: {data.total_files}</p>
-                <p>⚡ Built Files: {data.built_count}</p>
+                <p> Total Files: {data.total_files ?? 0}</p>
+                <p> Built Files: {data.built_count ?? 0}</p>
 
             </div>
             <div className="card">
