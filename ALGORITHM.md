@@ -80,14 +80,20 @@ Headers are tracked as changed or affected, but they are not compiled directly. 
 
 ## Live Change Detection and Dashboard Updates
 
-Watch mode repeats the same scan algorithm every 1 second. When content hashes change, status is rewritten:
+OptiBuild supports live change detection using watch mode. Watch mode repeats the same scan algorithm every 1 second. It stores metadata for each watched file, including path, last modified time, and hash. On each cycle, it compares current metadata with the cached metadata.
+
+When a changed file is detected, OptiBuild marks it as changed and traverses the reverse dependency graph to identify all dependent files.
 
 ```text
-watch loop:
-    scan project
-    update cache
-    update status.json
-    sleep 1 second
+1. User modifies a source or header file.
+2. File watcher detects the changed timestamp or hash.
+3. OptiBuild marks the file as changed.
+4. Reverse dependency graph traversal begins.
+5. BFS or DFS finds all affected files.
+6. Affected files are written to status.json.
+7. Backend API exposes the updated status.
+8. React dashboard fetches the latest status every second.
+9. Dashboard updates changed files, affected files, and metrics live.
 ```
 
 The dashboard does not read source files directly. It polls the API:
@@ -97,6 +103,28 @@ GET /api/status -> .optibuild/status.json
 ```
 
 This keeps the system simple and reliable for an MVP.
+
+Example dashboard polling logic:
+
+```jsx
+useEffect(() => {
+  const fetchStatus = async () => {
+    try {
+      const response = await fetch("http://localhost:8080/api/status");
+      const data = await response.json();
+      setStatus(data);
+      setConnected(true);
+    } catch (error) {
+      setConnected(false);
+    }
+  };
+
+  fetchStatus();
+  const interval = setInterval(fetchStatus, 1000);
+
+  return () => clearInterval(interval);
+}, []);
+```
 
 ## Complexity
 

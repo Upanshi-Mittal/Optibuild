@@ -1,66 +1,3 @@
-# OptiBuild — Smart Project Optimization Platform
-
-OptiBuild is a C++-based project optimization system designed to improve workflow efficiency and resource allocation in complex task environments. It analyzes task dependencies, identifies bottlenecks, and provides data-driven insights to enhance productivity.
-The project simulates real-world project management scenarios where multiple tasks, constraints, and resources must be balanced efficiently. It focuses on logical problem-solving, algorithmic optimization, and performance-oriented design.
-
----
-
-## Key Features
-
-- Workflow Analysis — Evaluates task flow and execution paths  
-- Resource Allocation — Optimizes distribution of available resources  
-- Bottleneck Detection — Identifies inefficiencies in project pipelines  
-- Performance Optimization — Improves execution efficiency using data insights  
-- Task Dependency Handling — Models relationships between tasks  
-
----
-
-## Tech Stack
-
-- **Language:** C++  
-- **Concepts Used:**  
-  - Data Structures (Vectors, Maps, Graphs)  
-  - Algorithms (Traversal, Optimization Logic)  
-- **Tools:** STL, File Handling  
-
----
-
-## System Overview
-
-The system models a project as a structured set of tasks with dependencies. It processes input data, builds relationships between tasks, and applies logical analysis to:
-
-- Determine execution order  
-- Detect delays and inefficiencies  
-- Suggest optimized workflow paths  
-
----
-
-## How It Works
-
-1. Input project/task data  
-2. Build dependency graph  
-3. Analyze execution flow  
-4. Detect bottlenecks  
-5. Optimize task scheduling and resource usage  
-
----
-
-## Use Cases
-
-- Project Management Simulation  
-- Workflow Optimization Systems  
-- Resource Planning Tools  
-- Algorithmic Problem Solving Practice  
-
----
-
-## Future Improvements
-
-- Add visualization for workflow graphs  
-- Integrate a web-based frontend  
-- Implement real-time data processing  
-- Extend to multi-user project environments  
-=======
 # OptiBuild
 
 OptiBuild is a reusable selective-build optimizer for C++ projects. It scans a project, builds a directed dependency graph from local includes, detects changed files with hashes, finds affected dependents with reverse-graph BFS, and exposes live status for a React dashboard.
@@ -172,18 +109,47 @@ OptiBuild detects CMake and Makefile projects and suggests default build/test co
 
 ## Live Change Detection and Dashboard Updates
 
-Watch mode uses portable polling:
+OptiBuild supports live change detection using watch mode. When watch mode is enabled, the tool checks project files at regular intervals. It stores file metadata such as file path, last modified time, and file hash. On every scan cycle, OptiBuild compares the current metadata with the previous cache.
+
+If a file has changed, OptiBuild marks it as a changed file. Then it uses the reverse dependency graph to find all files that depend on the changed file.
 
 ```text
-1. Load config.
-2. Load previous cache.
-3. Scan watched files.
-4. Compare hashes.
-5. Rebuild the dependency graph.
-6. Traverse reverse dependencies with BFS.
-7. Write .optibuild/status.json.
-8. Dashboard polls /api/status every 1 second.
+1. User modifies a source or header file.
+2. File watcher detects the changed timestamp or hash.
+3. OptiBuild marks the file as changed.
+4. Reverse dependency graph traversal begins.
+5. BFS or DFS finds all affected files.
+6. Affected files are written to .optibuild/status.json.
+7. Backend API exposes the updated status.
+8. React dashboard fetches the latest status every second.
+9. Dashboard updates changed files, affected files, and metrics live.
 ```
+
+The dashboard does not need to be refreshed manually. It uses polling to request the latest data from the backend API every second.
+
+Example React polling logic:
+
+```jsx
+useEffect(() => {
+  const fetchStatus = async () => {
+    try {
+      const response = await fetch("http://localhost:8080/api/status");
+      const data = await response.json();
+      setStatus(data);
+      setConnected(true);
+    } catch (error) {
+      setConnected(false);
+    }
+  };
+
+  fetchStatus();
+  const interval = setInterval(fetchStatus, 1000);
+
+  return () => clearInterval(interval);
+}, []);
+```
+
+This makes OptiBuild useful as a live developer tool. As soon as the developer changes a file, the dashboard shows the changed file, affected files, skipped files, and estimated rebuild reduction.
 
 API endpoints:
 

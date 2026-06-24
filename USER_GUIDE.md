@@ -60,6 +60,20 @@ optibuild watch
 
 The watcher rescans every 1 second. When you edit a watched file, OptiBuild updates status with changed files, affected files, rebuild files, and event messages.
 
+Live updates work like this:
+
+```text
+1. You modify a source or header file.
+2. Watch mode detects a changed timestamp or hash.
+3. OptiBuild marks the file as changed.
+4. Reverse dependency traversal begins.
+5. BFS finds files affected by the changed dependency.
+6. .optibuild/status.json is updated.
+7. The API exposes the latest status.
+8. The React dashboard polls every second.
+9. Dashboard metrics update without a manual refresh.
+```
+
 ## Start the Dashboard
 
 ```bash
@@ -79,6 +93,8 @@ The dashboard polls:
 ```text
 http://localhost:8080/api/status
 ```
+
+When connected, the dashboard shows changed files, affected files, skipped files, rebuild reduction, and recent event messages live.
 
 ## Build and Test
 
