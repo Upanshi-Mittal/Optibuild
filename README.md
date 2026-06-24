@@ -1,4 +1,3 @@
-<<<<<<< HEAD
 # OptiBuild — Smart Project Optimization Platform
 
 OptiBuild is a C++-based project optimization system designed to improve workflow efficiency and resource allocation in complex task environments. It analyzes task dependencies, identifies bottlenecks, and provides data-driven insights to enhance productivity.
@@ -229,4 +228,3 @@ Duplicate prevention using unordered_set: Average O(1)
 
 Overall complexity per scan: O(V + E)
 ```
->>>>>>> 492ebae (Add initial OptiBuild analyzer and dashboard)
