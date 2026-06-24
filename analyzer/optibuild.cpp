@@ -4,5 +4,5 @@
 #include <vector>
 
 int main(int argc, char** argv) {
-    return runOptiBuildCli(std::vector<std::string>(argv + 1, argv + argc), "build");
+    return runOptiBuildCli(std::vector<std::string>(argv + 1, argv + argc), "--scan");
 }

@@ -1,9 +1,11 @@
 cmake_minimum_required(VERSION 3.10)
-project(CI_Optimizer)
+project(OptiBuild)
 
 set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 include_directories(src)
+include_directories(analyzer)
 
 # All source files
 file(GLOB_RECURSE SOURCES "src/*.cpp")
@@ -20,6 +22,13 @@ add_executable(test_runner tests/test_main.cpp ${TEST_SOURCES})
 enable_testing()
 add_test(NAME MyTest COMMAND test_runner)
 
-add_executable(graph_builder analyzer/graph_builder.cpp)
-add_executable(impact_analyzer analyzer/impact_analyzer.cpp)
-add_executable(build_optimizer analyzer/build_optimizer.cpp)
+set(ANALYZER_CORE
+    analyzer/dependency_graph.cpp
+    analyzer/optibuild_config.cpp
+    analyzer/optibuild_cli.cpp
+)
+
+add_executable(optibuild analyzer/optibuild.cpp ${ANALYZER_CORE})
+add_executable(graph_builder analyzer/graph_builder.cpp ${ANALYZER_CORE})
+add_executable(impact_analyzer analyzer/impact_analyzer.cpp ${ANALYZER_CORE})
+add_executable(build_optimizer analyzer/build_optimizer.cpp ${ANALYZER_CORE})

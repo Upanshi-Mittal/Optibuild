@@ -6,6 +6,7 @@ void saveUser(const std::string& username) {
 }
 //hiiiiiii
 //now this one
+//hii
 bool userExists(const std::string& username) {
     return username == "admin";
 }

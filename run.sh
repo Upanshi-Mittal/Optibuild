@@ -1,12 +1,8 @@
 #!/bin/bash
+set -e
 
-cd build
+cmake -S . -B build
+cmake --build build
 
-echo "=== Building Graph ==="
-./graph_builder
-
-echo "=== Detect Changes ==="
-./impact_analyzer
-
-echo "=== Selective Build ==="
-./build_optimizer
+echo "=== OptiBuild Scan ==="
+./build/optibuild scan --project .

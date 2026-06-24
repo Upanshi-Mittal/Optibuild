@@ -14,7 +14,13 @@ test_runner
 graph_builder
 impact_analyzer
 build_optimizer
+optibuild
+
+# Frontend generated files
+frontend/dist/
+frontend/node_modules/
 
 # Cache files
+.optibuild/
 *.cache
 impacted_files.txt

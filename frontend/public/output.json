@@ -1,9 +1,25 @@
 {
-  "built_files": [
-    "src/billing/billing.cpp"
-  ],
-  "total_files": 5,
-  "built_count": 1,
-  "optimization": 80,
-  "time_taken": 0.0217142
+  "summary": {
+    "total_files": 9,
+    "source_files": 5,
+    "changed_files": 0,
+    "affected_files": 0,
+    "built_count": 0,
+    "skipped_files": 5,
+    "optimization": 100.00,
+    "time_taken": 0.0039,
+    "last_scan_time": "2026-06-24 22:01:01"
+  },
+  "built_files": [  ],
+  "files": [
+    { "path": "src/billing/billing.cpp", "status": "skipped", "dependencyCount": 3, "hash": "44ea24d27162a31c" },
+    { "path": "src/billing/billing.h", "status": "skipped", "dependencyCount": 0, "hash": "b8f840e3cce05382" },
+    { "path": "src/main.cpp", "status": "skipped", "dependencyCount": 2, "hash": "692292d4f68701cb" },
+    { "path": "src/database/database.cpp", "status": "skipped", "dependencyCount": 1, "hash": "a91a4d3b0c99e46b" },
+    { "path": "src/utils/utils.h", "status": "skipped", "dependencyCount": 0, "hash": "6786c7ed915b82de" },
+    { "path": "src/utils/utils.cpp", "status": "skipped", "dependencyCount": 1, "hash": "7a166aec2c876a3e" },
+    { "path": "src/auth/auth.cpp", "status": "skipped", "dependencyCount": 3, "hash": "81360e6f4b0eac94" },
+    { "path": "src/database/database.h", "status": "skipped", "dependencyCount": 0, "hash": "49b6798b8df156ea" },
+    { "path": "src/auth/auth.h", "status": "skipped", "dependencyCount": 0, "hash": "74ec6f9301b54cb6" }
+  ]
 }

@@ -1,63 +1,66 @@
-import ReactFlow from "reactflow";
+import ReactFlow, { Background, Controls } from "reactflow";
 import "reactflow/dist/style.css";
 
-export default function Graph({ edges = [], impactedFiles = [] }) {
+const statusColor = {
+  changed: "#dc2626",
+  affected: "#f59e0b",
+  skipped: "#2563eb",
+};
 
-  const nodesMap = new Map();
-  const flowEdges = [];
-
-  let x = 0;
-  let y = 0;
-
-  edges.forEach((e, i) => {
-
-    const isImpactedFrom = impactedFiles.some(f => e.from.includes(f));
-    const isImpactedTo = impactedFiles.some(f => e.to.includes(f));
-
-    // 🔹 FROM NODE
-    if (!nodesMap.has(e.from)) {
-      nodesMap.set(e.from, {
-        id: e.from,
-        position: { x, y }, // ✅ REQUIRED
-        data: { label: e.from },
-        style: {
-          background: isImpactedFrom ? "#ff4d4d" : "#1e1e1e",
-          color: "white",
-          border: "1px solid #555"
-        }
-      });
-      y += 80;
-    }
-
-    // 🔹 TO NODE
-    if (!nodesMap.has(e.to)) {
-      nodesMap.set(e.to, {
-        id: e.to,
-        position: { x: x + 250, y }, // ✅ REQUIRED
-        data: { label: e.to },
-        style: {
-          background: isImpactedTo ? "#ff4d4d" : "#1e1e1e",
-          color: "white",
-          border: "1px solid #555"
-        }
-      });
-      y += 80;
-    }
-
-    flowEdges.push({
-      id: i.toString(),
-      source: e.from,
-      target: e.to,
-      animated: isImpactedFrom || isImpactedTo
-    });
+export default function Graph({ nodes = [], edges = [] }) {
+  const nodeStatus = new Map(nodes.map((node) => [node.id, node.status]));
+  const flowNodes = buildNodes(nodes, edges);
+  const flowEdges = edges.map((edge, index) => {
+    const fromStatus = nodeStatus.get(edge.from);
+    const toStatus = nodeStatus.get(edge.to);
+    return {
+      id: `${edge.from}-${edge.to}-${index}`,
+      source: edge.from,
+      target: edge.to,
+      animated: fromStatus !== "skipped" || toStatus !== "skipped",
+      style: {
+        stroke: fromStatus === "changed" || toStatus === "changed" ? "#dc2626" : "#64748b",
+        strokeWidth: 2,
+      },
+    };
   });
 
-  const nodes = Array.from(nodesMap.values());
-
   return (
-    <div style={{ height: 500 }}>
-      <h3>🔗 Dependency Graph</h3>
-      <ReactFlow nodes={nodes} edges={flowEdges} fitView />
+    <div className="flow-canvas">
+      <ReactFlow nodes={flowNodes} edges={flowEdges} fitView>
+        <Background color="#dbe3ef" gap={18} />
+        <Controls />
+      </ReactFlow>
     </div>
   );
+}
+
+function buildNodes(nodes, edges) {
+  const allIds = new Set(nodes.map((node) => node.id));
+  edges.forEach((edge) => {
+    allIds.add(edge.from);
+    allIds.add(edge.to);
+  });
+
+  const statusById = new Map(nodes.map((node) => [node.id, node.status]));
+  return Array.from(allIds).map((id, index) => {
+    const column = index % 3;
+    const row = Math.floor(index / 3);
+    const status = statusById.get(id) || "skipped";
+
+    return {
+      id,
+      position: { x: column * 280, y: row * 110 },
+      data: { label: id },
+      style: {
+        background: "#ffffff",
+        border: `2px solid ${statusColor[status] || "#94a3b8"}`,
+        borderRadius: 8,
+        color: "#0f172a",
+        fontSize: 12,
+        padding: 10,
+        width: 220,
+      },
+    };
+  });
 }
