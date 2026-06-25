@@ -3,22 +3,17 @@
 #include "dependency_graph.h"
 #include "optibuild_config.h"
 
+#include <algorithm>
 #include <chrono>
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
+#include <regex>
 #include <sstream>
 #include <string>
 #include <thread>
 #include <vector>
-
-#ifndef _WIN32
-#include <arpa/inet.h>
-#include <netinet/in.h>
-#include <sys/socket.h>
-#include <unistd.h>
-#endif
 
 namespace fs = std::filesystem;
 
@@ -26,8 +21,8 @@ namespace {
 struct CliOptions {
     std::string command = "scan";
     std::string projectRoot = ".";
-    bool dashboard = false;
-    bool watch = false;
+    std::string outputRoot;
+    int intervalSeconds = 1;
 };
 
 std::string readTextFile(const std::string& path, const std::string& fallback = "{}") {
@@ -64,31 +59,38 @@ std::string statusPath(const std::string& root) {
     return (fs::path(root) / ".optibuild" / "status.json").string();
 }
 
-std::string dashboardOutputPath(const std::string& root) {
-    if (fs::exists("frontend/public")) {
-        return "frontend/public/output.json";
+std::string outputRoot(const CliOptions& options, const std::string& projectRoot) {
+    if (!options.outputRoot.empty()) {
+        return absolutePath(options.outputRoot);
     }
-    return (fs::path(root) / ".optibuild" / "output.json").string();
+    return (fs::path(projectRoot) / ".optibuild").string();
 }
 
-std::string dashboardGraphPath(const std::string& root) {
-    if (fs::exists("frontend/public")) {
-        return "frontend/public/graph.json";
-    }
-    return (fs::path(root) / ".optibuild" / "graph.json").string();
+std::string dashboardOutputPath(const std::string& outputRootPath) {
+    return (fs::path(outputRootPath) / "output.json").string();
+}
+
+std::string dashboardGraphPath(const std::string& outputRootPath) {
+    return (fs::path(outputRootPath) / "graph.json").string();
 }
 
 void printUsage() {
     std::cout << "OptiBuild reusable C++ selective-build optimizer\n\n";
     std::cout << "Usage:\n";
+    std::cout << "  optibuild --scan [--project path] [--output path]\n";
+    std::cout << "  optibuild --watch [--project path] [--output path] [--interval seconds]\n";
+    std::cout << "  optibuild --build [--project path] [--output path]\n";
+    std::cout << "  optibuild --test [--project path] [--output path]\n";
+    std::cout << "  optibuild scan [--project path] [--output path]\n";
+    std::cout << "  optibuild watch [--project path] [--output path]\n";
+    std::cout << "  optibuild build [--project path] [--output path]\n";
+    std::cout << "  optibuild test [--project path] [--output path]\n";
     std::cout << "  optibuild init [--project path]\n";
-    std::cout << "  optibuild scan [--project path]\n";
-    std::cout << "  optibuild build [--project path]\n";
-    std::cout << "  optibuild test [--project path]\n";
-    std::cout << "  optibuild watch [--project path]\n";
-    std::cout << "  optibuild dashboard [--project path]\n";
-    std::cout << "  optibuild status [--project path]\n";
-    std::cout << "  optibuild --project /path/to/project --watch --dashboard\n";
+    std::cout << "  optibuild status [--project path]\n\n";
+    std::cout << "Examples:\n";
+    std::cout << "  ./optibuild --project /path/to/cpp/project --scan\n";
+    std::cout << "  ./optibuild --project /path/to/cpp/project --watch --output frontend/public\n";
+    std::cout << "  ./optibuild --project /path/to/cpp/project --scan --output /tmp/optibuild-report\n";
 }
 
 CliOptions parseOptions(const std::vector<std::string>& args, const std::string& defaultMode) {
@@ -101,8 +103,7 @@ CliOptions parseOptions(const std::vector<std::string>& args, const std::string&
             printUsage();
             std::exit(0);
         }
-        if (arg == "init" || arg == "scan" || arg == "build" || arg == "test" ||
-            arg == "watch" || arg == "dashboard" || arg == "status") {
+        if (arg == "init" || arg == "scan" || arg == "watch" || arg == "build" || arg == "test" || arg == "status") {
             options.command = arg;
             continue;
         }
@@ -117,17 +118,28 @@ CliOptions parseOptions(const std::vector<std::string>& args, const std::string&
             options.projectRoot = arg.substr(10);
             continue;
         }
-        if (arg == "--watch") {
-            options.watch = true;
-            options.command = "watch";
+        if (arg == "--output" && i + 1 < args.size()) {
+            options.outputRoot = args[++i];
             continue;
         }
-        if (arg == "--dashboard") {
-            options.dashboard = true;
+        if (arg.rfind("--output=", 0) == 0) {
+            options.outputRoot = arg.substr(9);
             continue;
         }
-        if (arg == "--scan" || arg == "--dashboard-data") {
+        if (arg == "--interval" && i + 1 < args.size()) {
+            options.intervalSeconds = std::max(1, std::stoi(args[++i]));
+            continue;
+        }
+        if (arg.rfind("--interval=", 0) == 0) {
+            options.intervalSeconds = std::max(1, std::stoi(arg.substr(11)));
+            continue;
+        }
+        if (arg == "--scan") {
             options.command = "scan";
+            continue;
+        }
+        if (arg == "--watch") {
+            options.command = "watch";
             continue;
         }
         if (arg == "--build") {
@@ -138,11 +150,12 @@ CliOptions parseOptions(const std::vector<std::string>& args, const std::string&
             options.command = "test";
             continue;
         }
+        if (arg == "--dashboard" || arg == "dashboard") {
+            std::cerr << "Dashboard server mode is not enabled yet. Use --watch --output frontend/public and run the React app separately.\n";
+            std::exit(1);
+        }
     }
 
-    if (options.dashboard && options.watch) {
-        options.command = "watch";
-    }
     options.projectRoot = absolutePath(options.projectRoot);
     return options;
 }
@@ -155,13 +168,21 @@ OptiBuildConfig loadOrDetectConfig(const std::string& root) {
     } else if (fs::path(config.projectRoot).is_relative()) {
         config.projectRoot = absolutePath((fs::path(root) / config.projectRoot).string());
     }
+    config.save(configPath(root));
     return config;
 }
 
-BuildPlan runScan(const OptiBuildConfig& config, bool watchMode, const std::vector<std::string>& extraEvents = {}) {
+BuildPlan runScan(
+    const OptiBuildConfig& config,
+    const std::string& outputRootPath,
+    const std::vector<std::string>& extraEvents = {},
+    bool watchMode = false,
+    bool printDetails = true,
+    bool saveCacheResult = true
+) {
     const auto started = std::chrono::high_resolution_clock::now();
 
-    DependencyGraph graph(config.projectRoot, config.sourceDirs, config.watchExtensions, config.ignoreDirs);
+    DependencyGraph graph(config.projectRoot, config.sourceDirs, config.fileExtensions, config.ignoreDirs);
     graph.loadCache(cachePath(config.projectRoot));
     graph.scan();
     const auto changed = graph.detectChangedFiles();
@@ -183,10 +204,75 @@ BuildPlan runScan(const OptiBuildConfig& config, bool watchMode, const std::vect
     events.push_back(std::to_string(plan.affectedFiles.size()) + " affected files detected");
 
     graph.exportStatusData(plan, statusPath(config.projectRoot), events);
-    graph.exportDashboardData(plan, dashboardOutputPath(config.projectRoot), dashboardGraphPath(config.projectRoot));
-    graph.saveCache(cachePath(config.projectRoot));
-    graph.printSummary(plan);
+    graph.exportDashboardData(plan, dashboardOutputPath(outputRootPath), dashboardGraphPath(outputRootPath));
+    if (saveCacheResult) {
+        graph.saveCache(cachePath(config.projectRoot));
+    }
+    if (printDetails) {
+        graph.printSummary(plan);
+        std::cout << "Config: " << configPath(config.projectRoot) << "\n";
+        std::cout << "Cache: " << cachePath(config.projectRoot) << "\n";
+        std::cout << "Status: " << statusPath(config.projectRoot) << "\n";
+        std::cout << "Dashboard JSON: " << dashboardOutputPath(outputRootPath) << "\n";
+    }
     return plan;
+}
+
+std::string getJsonString(const std::string& json, const std::string& key, const std::string& fallback = "") {
+    const std::regex pattern("\"" + key + "\"\\s*:\\s*\"([^\"]*)\"");
+    std::smatch match;
+    return std::regex_search(json, match, pattern) ? match[1].str() : fallback;
+}
+
+std::vector<std::string> getJsonStringArray(const std::string& json, const std::string& key) {
+    const std::regex arrayPattern("\"" + key + "\"\\s*:\\s*\\[([\\s\\S]*?)\\]");
+    std::smatch arrayMatch;
+    if (!std::regex_search(json, arrayMatch, arrayPattern)) {
+        return {};
+    }
+
+    std::vector<std::string> values;
+    const std::string body = arrayMatch[1].str();
+    const std::regex valuePattern("\"([^\"]*)\"");
+    for (auto it = std::sregex_iterator(body.begin(), body.end(), valuePattern);
+         it != std::sregex_iterator(); ++it) {
+        values.push_back((*it)[1].str());
+    }
+    return values;
+}
+
+void printFileList(const std::string& title, const std::vector<std::string>& files) {
+    std::cout << title << " (" << files.size() << ")\n";
+    if (files.empty()) {
+        std::cout << "  none\n";
+        return;
+    }
+    for (const auto& file : files) {
+        std::cout << "  modified: " << file << "\n";
+    }
+}
+
+void printStatusSummary(const std::string& root) {
+    const auto path = statusPath(root);
+    if (!fs::exists(path)) {
+        std::cout << "No OptiBuild status found. Run optibuild --scan first.\n";
+        return;
+    }
+
+    const auto json = readTextFile(path);
+    const auto changed = getJsonStringArray(json, "changedFiles");
+    const auto affected = getJsonStringArray(json, "affectedFiles");
+    const auto rebuild = getJsonStringArray(json, "rebuildFiles");
+
+    std::cout << "OptiBuild status\n";
+    std::cout << "Project: " << getJsonString(json, "projectName", "unknown") << "\n";
+    std::cout << "Root: " << getJsonString(json, "projectRoot", root) << "\n";
+    std::cout << "Last scan: " << getJsonString(json, "lastScanTime", "not_scanned") << "\n\n";
+    printFileList("Changed files", changed);
+    std::cout << "\n";
+    printFileList("Affected files", affected);
+    std::cout << "\n";
+    printFileList("Rebuild candidates", rebuild);
 }
 
 int initProject(const std::string& root) {
@@ -227,114 +313,43 @@ int runConfiguredCommand(const OptiBuildConfig& config, const std::string& comma
     return std::system(fullCommand.c_str());
 }
 
-int runBuild(const OptiBuildConfig& config) {
-    auto plan = runScan(config, false, {"Build requested"});
+int runBuild(const OptiBuildConfig& config, const std::string& outputRootPath) {
+    auto plan = runScan(config, outputRootPath, {"Build requested"});
     if (plan.rebuildFiles.empty()) {
         std::cout << "No affected source files found, but running configured build for safety.\n";
     }
     return runConfiguredCommand(config, config.buildCommand, "build");
 }
 
-int runTest(const OptiBuildConfig& config) {
-    runScan(config, false, {"Test requested"});
+int runTest(const OptiBuildConfig& config, const std::string& outputRootPath) {
+    runScan(config, outputRootPath, {"Test requested"});
     return runConfiguredCommand(config, config.testCommand, "test");
 }
 
-int runWatch(const OptiBuildConfig& config) {
-    std::cout << "Watching " << config.projectRoot << " every 1 second. Press Ctrl+C to stop.\n";
-    while (true) {
-        runScan(config, true, {"Watch scan complete"});
-        std::this_thread::sleep_for(std::chrono::seconds(1));
+int runWatch(const OptiBuildConfig& config, const std::string& outputRootPath, int intervalSeconds) {
+    std::cout << "Watching " << config.projectRoot << " every " << intervalSeconds << " second(s).\n";
+    std::cout << "Press Ctrl+C to stop.\n";
+    std::cout << "Dashboard JSON: " << dashboardOutputPath(outputRootPath) << "\n\n";
+
+    if (!fs::exists(cachePath(config.projectRoot))) {
+        std::cout << "No cache found. Creating initial baseline first.\n";
+        runScan(config, outputRootPath, {"Initial watch baseline created"}, true, false, true);
     }
-}
-
-std::string httpResponse(const std::string& body, const std::string& status = "200 OK", const std::string& contentType = "application/json") {
-    std::ostringstream out;
-    out << "HTTP/1.1 " << status << "\r\n";
-    out << "Content-Type: " << contentType << "\r\n";
-    out << "Access-Control-Allow-Origin: *\r\n";
-    out << "Access-Control-Allow-Methods: GET, POST, OPTIONS\r\n";
-    out << "Access-Control-Allow-Headers: Content-Type\r\n";
-    out << "Content-Length: " << body.size() << "\r\n";
-    out << "Connection: close\r\n\r\n";
-    out << body;
-    return out.str();
-}
-
-int runApiServer(const OptiBuildConfig& config) {
-#ifdef _WIN32
-    std::cout << "Dashboard API server is not implemented for Windows in this MVP.\n";
-    return 1;
-#else
-    int serverFd = socket(AF_INET, SOCK_STREAM, 0);
-    if (serverFd < 0) {
-        std::cerr << "Failed to create API socket.\n";
-        return 1;
-    }
-
-    int opt = 1;
-    setsockopt(serverFd, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
-
-    sockaddr_in address{};
-    address.sin_family = AF_INET;
-    address.sin_addr.s_addr = INADDR_ANY;
-    address.sin_port = htons(config.apiPort);
-
-    if (bind(serverFd, reinterpret_cast<sockaddr*>(&address), sizeof(address)) < 0) {
-        std::cerr << "Failed to bind API server on port " << config.apiPort << ".\n";
-        close(serverFd);
-        return 1;
-    }
-    if (listen(serverFd, 16) < 0) {
-        std::cerr << "Failed to listen on API port.\n";
-        close(serverFd);
-        return 1;
-    }
-
-    std::cout << "OptiBuild API running at http://localhost:" << config.apiPort << "\n";
-    std::cout << "Start the React dashboard with: cd frontend && npm run dev\n";
 
     while (true) {
-        sockaddr_in clientAddress{};
-        socklen_t clientLength = sizeof(clientAddress);
-        int client = accept(serverFd, reinterpret_cast<sockaddr*>(&clientAddress), &clientLength);
-        if (client < 0) continue;
-
-        char buffer[4096] = {0};
-        read(client, buffer, sizeof(buffer) - 1);
-        const std::string request(buffer);
-
-        std::istringstream requestStream(request);
-        std::string method;
-        std::string path;
-        requestStream >> method >> path;
-
-        std::string response;
-        if (method == "OPTIONS") {
-            response = httpResponse("");
-        } else if (method == "GET" && path == "/api/status") {
-            response = httpResponse(readTextFile(statusPath(config.projectRoot)));
-        } else if (method == "GET" && path == "/api/files") {
-            response = httpResponse(readTextFile(statusPath(config.projectRoot)));
-        } else if (method == "GET" && path == "/api/graph") {
-            response = httpResponse(readTextFile(statusPath(config.projectRoot)));
-        } else if (method == "POST" && path == "/api/scan") {
-            runScan(config, false, {"API scan requested"});
-            response = httpResponse(readTextFile(statusPath(config.projectRoot)));
-        } else if (method == "POST" && path == "/api/build") {
-            runConfiguredCommand(config, config.buildCommand, "build");
-            response = httpResponse(readTextFile(statusPath(config.projectRoot)));
-        } else if (method == "POST" && path == "/api/test") {
-            runConfiguredCommand(config, config.testCommand, "test");
-            response = httpResponse(readTextFile(statusPath(config.projectRoot)));
-        } else {
-            response = httpResponse("{\"error\":\"Not found\"}", "404 Not Found");
+        const auto plan = runScan(config, outputRootPath, {"Watch scan complete"}, true, false, false);
+        std::cout << "[" << plan.lastScanTime << "] "
+                  << plan.changedFiles.size() << " changed, "
+                  << plan.affectedFiles.size() << " affected, "
+                  << plan.rebuildFiles.size() << " rebuild candidate(s)\n";
+        for (const auto& file : plan.changedFiles) {
+            std::error_code ec;
+            const auto relative = fs::relative(file, config.projectRoot, ec);
+            std::cout << "  modified: " << (ec ? file : relative.string()) << "\n";
         }
-
-        send(client, response.c_str(), response.size(), 0);
-        close(client);
+        std::cout << std::flush;
+        std::this_thread::sleep_for(std::chrono::seconds(intervalSeconds));
     }
-#endif
 }
 }
 
@@ -346,30 +361,24 @@ int runOptiBuildCli(const std::vector<std::string>& args, const std::string& def
     }
 
     auto config = loadOrDetectConfig(options.projectRoot);
+    const auto outputRootPath = outputRoot(options, config.projectRoot);
 
     if (options.command == "status") {
-        std::cout << readTextFile(statusPath(config.projectRoot), "No OptiBuild status found. Run optibuild scan first.\n");
+        printStatusSummary(config.projectRoot);
         return 0;
     }
     if (options.command == "scan") {
-        runScan(config, false);
+        runScan(config, outputRootPath);
         return 0;
     }
+    if (options.command == "watch") {
+        return runWatch(config, outputRootPath, options.intervalSeconds);
+    }
     if (options.command == "build") {
-        return runBuild(config);
+        return runBuild(config, outputRootPath);
     }
     if (options.command == "test") {
-        return runTest(config);
-    }
-    if (options.command == "watch") {
-        if (options.dashboard) {
-            std::thread apiThread([&config]() { runApiServer(config); });
-            apiThread.detach();
-        }
-        return runWatch(config);
-    }
-    if (options.command == "dashboard") {
-        return runApiServer(config);
+        return runTest(config, outputRootPath);
     }
 
     printUsage();

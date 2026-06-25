@@ -29,12 +29,6 @@ std::string getString(const std::string& json, const std::string& key, const std
     return std::regex_search(json, match, pattern) ? match[1].str() : fallback;
 }
 
-int getInt(const std::string& json, const std::string& key, int fallback) {
-    const std::regex pattern("\"" + key + "\"\\s*:\\s*(\\d+)");
-    std::smatch match;
-    return std::regex_search(json, match, pattern) ? std::stoi(match[1].str()) : fallback;
-}
-
 std::vector<std::string> getStringArray(const std::string& json, const std::string& key, const std::vector<std::string>& fallback) {
     const std::regex arrayPattern("\"" + key + "\"\\s*:\\s*\\[([^\\]]*)\\]");
     std::smatch arrayMatch;
@@ -77,9 +71,8 @@ bool OptiBuildConfig::load(const std::string& path) {
     buildDir = getString(json, "buildDir", buildDir);
     buildCommand = getString(json, "buildCommand", buildCommand);
     testCommand = getString(json, "testCommand", testCommand);
-    dashboardPort = getInt(json, "dashboardPort", dashboardPort);
-    apiPort = getInt(json, "apiPort", apiPort);
-    watchExtensions = getStringArray(json, "watchExtensions", watchExtensions);
+    fileExtensions = getStringArray(json, "fileExtensions", fileExtensions);
+    fileExtensions = getStringArray(json, "watchExtensions", fileExtensions);
     ignoreDirs = getStringArray(json, "ignoreDirs", ignoreDirs);
     return true;
 }
@@ -98,9 +91,7 @@ bool OptiBuildConfig::save(const std::string& path) const {
     out << "  \"buildDir\": \"" << escapeJson(buildDir) << "\",\n";
     out << "  \"buildCommand\": \"" << escapeJson(buildCommand) << "\",\n";
     out << "  \"testCommand\": \"" << escapeJson(testCommand) << "\",\n";
-    out << "  \"dashboardPort\": " << dashboardPort << ",\n";
-    out << "  \"apiPort\": " << apiPort << ",\n";
-    writeStringArray(out, "watchExtensions", watchExtensions, true);
+    writeStringArray(out, "fileExtensions", fileExtensions, true);
     writeStringArray(out, "ignoreDirs", ignoreDirs, false);
     out << "}\n";
     return true;

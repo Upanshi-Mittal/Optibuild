@@ -1,10 +1,10 @@
 # OptiBuild
 
-OptiBuild is a reusable selective-build optimizer for C++ projects. It scans a project, builds a directed dependency graph from local includes, detects changed files with hashes, finds affected dependents with reverse-graph BFS, and exposes live status for a React dashboard.
+OptiBuild is a reusable C++ project scanner that helps developers understand which source files are affected by a change. It builds a directed include graph, stores file hashes in a cache, runs reverse-graph BFS to find impacted files, and writes JSON that a React dashboard or another tool can consume.
 
-It is designed to work with CMake projects, Makefile projects, and simple plain C++ folders.
+You can run a single scan like `git status`, or use watch mode to keep the JSON/dashboard updated while you edit files.
 
-## Build OptiBuild
+## Build
 
 ```bash
 cmake -S . -B build
@@ -17,180 +17,191 @@ Run tests:
 ctest --test-dir build --output-on-failure
 ```
 
-## Using OptiBuild in Any C++ Project
+## Use With Any C++ Project
+
+The default project path is the current directory:
 
 ```bash
-# Step 1: Go to any C++ project
-cd my-cpp-project
-
-# Step 2: Initialize OptiBuild
-optibuild init
-
-# Step 3: Edit .optibuild/config.json if needed
-nano .optibuild/config.json
-
-# Step 4: Run first scan
-optibuild scan
-
-# Step 5: Start live watcher
-optibuild watch
-
-# Step 6: In another terminal, start dashboard
-optibuild dashboard
+cd /path/to/cpp/project
+optibuild --scan
 ```
 
-From this repo during development, use:
+From this repository during development:
 
 ```bash
-./build/optibuild init --project /path/to/cpp/project
-./build/optibuild scan --project /path/to/cpp/project
-./build/optibuild watch --project /path/to/cpp/project
-./build/optibuild dashboard --project /path/to/cpp/project
+./build/optibuild --project /path/to/cpp/project --scan
 ```
 
-Direct combined style:
+OptiBuild creates a per-project `.optibuild` directory:
 
-```bash
-./build/optibuild --project /path/to/cpp/project --watch --dashboard
+```text
+.optibuild/
+  config.json   # project settings
+  cache.json    # file hashes and dependency cache
+  status.json   # latest scan result for dashboards/tools
+  output.json   # dashboard summary JSON
+  graph.json    # dependency graph JSON
 ```
 
-Development dashboard mode:
+## CLI Options
 
 ```bash
-# Terminal 1
-./build/optibuild dashboard --project ../sample_project
+optibuild --scan
+optibuild --watch
+optibuild --build
+optibuild --test
+optibuild --project /path/to/cpp/project --scan
+optibuild --project /path/to/cpp/project --watch --output /path/to/report-dir
+optibuild --project /path/to/cpp/project --scan --output /path/to/report-dir
+```
 
-# Terminal 2
+Equivalent command style is also supported:
+
+```bash
+optibuild scan --project /path/to/cpp/project
+optibuild watch --project /path/to/cpp/project
+optibuild build --project /path/to/cpp/project
+optibuild test --project /path/to/cpp/project
+optibuild status --project /path/to/cpp/project
+```
+
+`--output <path>` controls where `output.json` and `graph.json` are written. The config, cache, and status files always stay inside the target project’s `.optibuild` directory.
+
+To preview the bundled React dashboard during development, write the report into Vite's public directory:
+
+```bash
+./build/optibuild --project /path/to/cpp/project --scan --output frontend/public
 cd frontend
 npm install
 npm run dev
 ```
 
-Open the Vite URL, usually `http://127.0.0.1:5173/`.
-
-## CLI Commands
+For live dashboard updates, keep watch mode running in one terminal:
 
 ```bash
-optibuild init
-optibuild scan
-optibuild build
-optibuild test
-optibuild watch
-optibuild dashboard
-optibuild status
+./build/optibuild --project /path/to/cpp/project --watch --output frontend/public
 ```
 
-All commands accept:
+Then run the dashboard in another terminal:
 
 ```bash
---project /path/to/cpp/project
+cd frontend
+npm run dev
 ```
 
-## Config File
+Watch mode treats `.optibuild/cache.json` like a baseline. It keeps showing changed files until you run a normal scan again:
 
-`optibuild init` creates `.optibuild/config.json`:
+```bash
+./build/optibuild --project /path/to/cpp/project --scan
+```
+
+## Config
+
+OptiBuild auto-creates `.optibuild/config.json` on the first scan:
 
 ```json
 {
   "projectName": "MyCppProject",
-  "projectRoot": ".",
+  "projectRoot": "/path/to/cpp/project",
   "sourceDirs": ["src", "include"],
   "buildDir": "build",
   "buildCommand": "cmake --build build",
   "testCommand": "ctest --test-dir build --output-on-failure",
-  "dashboardPort": 5173,
-  "apiPort": 8080,
-  "watchExtensions": [".cpp", ".hpp", ".h", ".cc", ".cxx"],
+  "fileExtensions": [".cpp", ".hpp", ".h", ".cc", ".cxx"],
   "ignoreDirs": ["build", ".git", "node_modules", ".optibuild"]
 }
 ```
 
-OptiBuild detects CMake and Makefile projects and suggests default build/test commands.
+For Makefile projects, OptiBuild detects `make` and `make test`. For simple folders, it creates placeholder commands that you can edit.
 
-## Live Change Detection and Dashboard Updates
+## How It Works
 
-OptiBuild supports live change detection using watch mode. When watch mode is enabled, the tool checks project files at regular intervals. It stores file metadata such as file path, last modified time, and file hash. On every scan cycle, OptiBuild compares the current metadata with the previous cache.
+1. Scan configured source directories.
+2. Hash C++ source/header files.
+3. Parse local includes such as `#include "auth.h"`.
+4. Build a directed graph where `A -> B` means `A` includes `B`.
+5. Build the reverse graph where `B -> A` means `A` depends on `B`.
+6. Compare current hashes with `.optibuild/cache.json`.
+7. Run BFS from changed files through the reverse graph.
+8. Write `.optibuild/status.json`, `.optibuild/cache.json`, `output.json`, and `graph.json`.
 
-If a file has changed, OptiBuild marks it as a changed file. Then it uses the reverse dependency graph to find all files that depend on the changed file.
+## JSON Outputs
 
-```text
-1. User modifies a source or header file.
-2. File watcher detects the changed timestamp or hash.
-3. OptiBuild marks the file as changed.
-4. Reverse dependency graph traversal begins.
-5. BFS or DFS finds all affected files.
-6. Affected files are written to .optibuild/status.json.
-7. Backend API exposes the updated status.
-8. React dashboard fetches the latest status every second.
-9. Dashboard updates changed files, affected files, and metrics live.
+`.optibuild/status.json` is the main frontend-compatible result:
+
+```json
+{
+  "schemaVersion": 2,
+  "projectName": "my-project",
+  "projectRoot": "/path/to/my-project",
+  "lastScanTime": "2026-06-25 12:37:03",
+  "watchMode": false,
+  "totalFiles": 9,
+  "sourceFiles": 5,
+  "dependencyEdges": 10,
+  "changedFiles": [],
+  "affectedFiles": [],
+  "rebuildFiles": [],
+  "skippedFiles": 5,
+  "rebuildReductionPercent": 100.0,
+  "files": [],
+  "graph": { "edges": [] },
+  "events": []
+}
 ```
 
-The dashboard does not need to be refreshed manually. It uses polling to request the latest data from the backend API every second.
+`output.json` provides summary data for dashboard cards. `graph.json` contains graph nodes and directed edges for visualization.
 
-Example React polling logic:
+## Git-Style Status
 
-```jsx
-useEffect(() => {
-  const fetchStatus = async () => {
-    try {
-      const response = await fetch("http://localhost:8080/api/status");
-      const data = await response.json();
-      setStatus(data);
-      setConnected(true);
-    } catch (error) {
-      setConnected(false);
-    }
-  };
+After a scan or while watch mode is running, use:
 
-  fetchStatus();
-  const interval = setInterval(fetchStatus, 1000);
-
-  return () => clearInterval(interval);
-}, []);
+```bash
+optibuild status --project /path/to/cpp/project
 ```
 
-This makes OptiBuild useful as a live developer tool. As soon as the developer changes a file, the dashboard shows the changed file, affected files, skipped files, and estimated rebuild reduction.
+This prints changed files, affected files, and rebuild candidates in a readable summary.
 
-API endpoints:
+## Build and Test Commands
 
-```text
-GET  /api/status
-GET  /api/files
-GET  /api/graph
-POST /api/scan
-POST /api/build
-POST /api/test
+`--build` runs a scan first, then runs the configured build command from the project root:
+
+```bash
+optibuild --project /path/to/cpp/project --build
 ```
 
-The dashboard shows:
+`--test` runs a scan first, then runs the configured test command:
 
-- Live/Disconnected API state
-- Changed files
-- Affected files
-- Rebuild reduction percentage
-- Latest events timeline
-- Dependency graph
-- Scan, Build, and Test buttons
-
-## Selective Build Scope
-
-OptiBuild has two levels:
-
-- Level 1: Always provide dependency analysis, changed files, affected files, and rebuild reduction. The configured build command is run for correctness.
-- Level 2: Generate an optimized build plan. Exact per-file compilation depends on build-system internals and is future work for CMake target mapping, Ninja integration, or compile database support.
-
-OptiBuild does not claim perfect universal selective compilation for every C++ build system.
+```bash
+optibuild --project /path/to/cpp/project --test
+```
 
 ## Complexity
 
-Let `V` be files and `E` be dependencies.
+Let `V` be files and `E` be include dependencies.
 
 ```text
-Building dependency graph: O(V + E)
-Detecting changed files using hash map: O(V)
-Finding affected files using BFS/DFS: O(V + E)
-Dependency lookup using unordered_map: Average O(1)
-Duplicate prevention using unordered_set: Average O(1)
-
-Overall complexity per scan: O(V + E)
+Graph scan: O(V + E)
+Hash comparison with unordered_map: O(V)
+Reverse dependency BFS: O(V + E)
+Duplicate prevention with unordered_set: O(1) average per insert
 ```
+
+## Current Limitations
+
+OptiBuild resolves only local quote includes such as:
+
+```cpp
+#include "auth.h"
+```
+
+It does not fully resolve compiler include paths, generated files, macros, third-party headers, or exact build-system targets yet. The current build mode runs the configured project build command for correctness after producing the affected-file plan.
+
+## TODO: Future Live Mode
+
+- Replace polling watch mode with native filesystem events where available.
+- Add a small local API server for dashboard actions.
+- Let the React dashboard poll `.optibuild/status.json` through the API.
+- Add historical scan metrics.
+- Integrate `compile_commands.json` for compiler-accurate include resolution.
+- Add Ninja/CMake target mapping for more exact selective builds.

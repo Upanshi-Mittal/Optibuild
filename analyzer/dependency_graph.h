@@ -34,14 +34,14 @@ struct BuildPlan {
 
 class DependencyGraph {
 private:
-    std::unordered_map<std::string, std::vector<std::string>> adjacencyList;
-    std::unordered_map<std::string, std::vector<std::string>> reverseGraph;
+    std::unordered_map<std::string, std::unordered_set<std::string>> adjacencyList;
+    std::unordered_map<std::string, std::unordered_set<std::string>> reverseGraph;
     std::unordered_map<std::string, FileInfo> fileMetadata;
     std::unordered_map<std::string, std::string> cachedHashes;
 
     std::string projectRoot;
     std::vector<std::string> sourceDirs;
-    std::vector<std::string> watchExtensions;
+    std::vector<std::string> fileExtensions;
     std::vector<std::string> ignoreDirs;
 
 public:
@@ -69,7 +69,7 @@ public:
     void exportStatusData(const BuildPlan& plan, const std::string& statusPath, const std::vector<std::string>& events) const;
     void printSummary(const BuildPlan& plan) const;
 
-    const std::unordered_map<std::string, std::vector<std::string>>& dependencies() const;
+    const std::unordered_map<std::string, std::unordered_set<std::string>>& dependencies() const;
     const std::unordered_map<std::string, FileInfo>& files() const;
 };
 

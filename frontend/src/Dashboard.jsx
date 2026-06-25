@@ -2,14 +2,13 @@ import { useEffect, useMemo, useState } from "react";
 import Graph from "./Graph";
 import "./index.css";
 
-const API_BASE = "http://localhost:8080";
-
 const emptyStatus = {
   projectName: "OptiBuild",
   projectRoot: "",
   lastScanTime: "not_scanned",
-  watchMode: false,
   totalFiles: 0,
+  sourceFiles: 0,
+  dependencyEdges: 0,
   changedFiles: [],
   affectedFiles: [],
   rebuildFiles: [],
@@ -24,30 +23,31 @@ const emptyStatus = {
 
 export default function Dashboard() {
   const [status, setStatus] = useState(emptyStatus);
-  const [connected, setConnected] = useState(false);
+  const [loaded, setLoaded] = useState(false);
   const [message, setMessage] = useState("");
 
-  const fetchStatus = async () => {
+  const fetchReport = async () => {
     try {
-      const response = await fetch(`${API_BASE}/api/status`);
-      if (!response.ok) throw new Error("API unavailable");
-      const data = await response.json();
-      setStatus({ ...emptyStatus, ...data });
-      setConnected(true);
+      const [outputResponse, graphResponse] = await Promise.all([
+        fetch("/output.json"),
+        fetch("/graph.json"),
+      ]);
+      if (!outputResponse.ok) throw new Error("No OptiBuild report found");
+      const output = await outputResponse.json();
+      const graph = graphResponse.ok ? await graphResponse.json() : { edges: [] };
+      setStatus(normalizeReport(output, graph));
+      setLoaded(true);
       setMessage("");
     } catch {
-      setConnected(false);
-      setMessage("Disconnected from OptiBuild API. Run ./build/optibuild dashboard in another terminal.");
+      setLoaded(false);
+      setMessage("No report loaded. Run optibuild --scan --output frontend/public, then refresh this page.");
     }
   };
 
   useEffect(() => {
-    const initialLoad = setTimeout(fetchStatus, 0);
-    const interval = setInterval(fetchStatus, 1000);
-    return () => {
-      clearTimeout(initialLoad);
-      clearInterval(interval);
-    };
+    fetchReport();
+    const interval = setInterval(fetchReport, 1000);
+    return () => clearInterval(interval);
   }, []);
 
   const files = useMemo(() => status.files || [], [status.files]);
@@ -56,21 +56,6 @@ export default function Dashboard() {
     [files],
   );
 
-  async function runAction(path, label) {
-    setMessage(`${label} requested...`);
-    try {
-      const response = await fetch(`${API_BASE}${path}`, { method: "POST" });
-      if (!response.ok) throw new Error(`${label} failed`);
-      const data = await response.json();
-      setStatus({ ...emptyStatus, ...data });
-      setConnected(true);
-      setMessage(`${label} complete`);
-    } catch {
-      setConnected(false);
-      setMessage(`Could not run ${label}. Check that the OptiBuild API is running.`);
-    }
-  }
-
   return (
     <main className="dashboard-shell">
       <section className="hero-panel">
@@ -78,13 +63,13 @@ export default function Dashboard() {
           <p className="eyebrow">Reusable C++ selective builds</p>
           <h1>{status.projectName || "OptiBuild Dashboard"}</h1>
           <p className="hero-copy">
-            Live dependency analysis, affected-file detection, and build status for any configured C++ project.
+            Live dependency analysis, affected-file detection, and build impact data for any configured C++ project.
           </p>
         </div>
         <div className="live-stack">
-          <div className={`live-indicator ${connected ? "connected" : "disconnected"}`}>
+          <div className={`live-indicator ${loaded ? "connected" : "disconnected"}`}>
             <span />
-            {connected ? "Live" : "Disconnected"}
+            {loaded ? "Live report" : "No report"}
           </div>
           <div className="scan-badge">
             <span>Last scan</span>
@@ -93,15 +78,13 @@ export default function Dashboard() {
         </div>
       </section>
 
-      {message && <div className={`notice ${connected ? "" : "error"}`}>{message}</div>}
+      {message && <div className={`notice ${loaded ? "" : "error"}`}>{message}</div>}
 
       <section className="action-row">
-        <button onClick={() => runAction("/api/scan", "Scan")}>Scan Now</button>
-        <button onClick={() => runAction("/api/build", "Build")}>Build</button>
-        <button onClick={() => runAction("/api/test", "Test")}>Test</button>
-        <button disabled title="Start watch from the CLI with optibuild watch">
-          {status.watchMode ? "Watching" : "Start Watch"}
-        </button>
+        <button onClick={fetchReport}>Reload Report</button>
+        <button disabled title="Run optibuild --scan from the terminal">Scan</button>
+        <button disabled title="Run optibuild --build from the terminal">Build</button>
+        <button disabled title="Run optibuild --test from the terminal">Test</button>
       </section>
 
       <section className="metric-grid">
@@ -128,7 +111,7 @@ export default function Dashboard() {
           <div className="panel-header">
             <div>
               <h2>Latest Events</h2>
-              <p>Updated by scan, watch, build, and test actions</p>
+              <p>Updated while optibuild --watch writes JSON output</p>
             </div>
           </div>
           <div className="event-list">
@@ -185,4 +168,37 @@ function MetricCard({ label, value, tone = "" }) {
       <strong>{value}</strong>
     </article>
   );
+}
+
+function normalizeReport(output, graph) {
+  if (output.project && output.summary) {
+    return {
+      ...emptyStatus,
+      projectName: output.project.name,
+      projectRoot: output.project.root,
+      lastScanTime: output.summary.last_scan_time,
+      totalFiles: output.summary.total_files,
+      sourceFiles: output.summary.source_files,
+      dependencyEdges: output.summary.dependency_edges,
+      changedFiles: output.changed_files || [],
+      affectedFiles: output.affected_files || [],
+      rebuildFiles: output.built_files || [],
+      skippedFiles: output.summary.skipped_files,
+      rebuildReductionPercent: output.summary.optimization,
+      files: output.files || [],
+      graph: { edges: graph.edges || [] },
+      events: [
+        {
+          time: output.summary.last_scan_time,
+          message: `${output.summary.affected_files} affected files detected`,
+        },
+      ],
+    };
+  }
+
+  return {
+    ...emptyStatus,
+    ...output,
+    graph: output.graph || graph || { edges: [] },
+  };
 }

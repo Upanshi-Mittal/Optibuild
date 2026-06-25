@@ -135,12 +135,40 @@ std::vector<std::string> extractIncludes(const std::string& filePath) {
 
     return includes;
 }
+
+std::vector<std::string> sortedKeys(const std::unordered_map<std::string, FileInfo>& files) {
+    std::vector<std::string> paths;
+    paths.reserve(files.size());
+    for (const auto& [path, _] : files) {
+        paths.push_back(path);
+    }
+    std::sort(paths.begin(), paths.end());
+    return paths;
+}
+
+std::size_t edgeCount(const std::unordered_map<std::string, std::unordered_set<std::string>>& graph) {
+    std::size_t count = 0;
+    for (const auto& [_, edges] : graph) {
+        count += edges.size();
+    }
+    return count;
+}
+
+std::vector<std::string> sortedGraphKeys(const std::unordered_map<std::string, std::unordered_set<std::string>>& graph) {
+    std::vector<std::string> keys;
+    keys.reserve(graph.size());
+    for (const auto& [path, _] : graph) {
+        keys.push_back(path);
+    }
+    std::sort(keys.begin(), keys.end());
+    return keys;
+}
 }
 
 DependencyGraph::DependencyGraph(std::string rootDir)
     : projectRoot(canonicalPath(rootDir)),
       sourceDirs({"src"}),
-      watchExtensions({".cpp", ".hpp", ".h", ".cc", ".cxx"}),
+      fileExtensions({".cpp", ".hpp", ".h", ".cc", ".cxx"}),
       ignoreDirs({"build", ".git", "node_modules", ".optibuild"}) {}
 
 DependencyGraph::DependencyGraph(
@@ -150,7 +178,7 @@ DependencyGraph::DependencyGraph(
     std::vector<std::string> ignoredDirectories
 ) : projectRoot(canonicalPath(rootDir)),
     sourceDirs(std::move(sourceDirectories)),
-    watchExtensions(std::move(extensions)),
+    fileExtensions(std::move(extensions)),
     ignoreDirs(std::move(ignoredDirectories)) {}
 
 void DependencyGraph::addFile(const std::string& filePath) {
@@ -172,9 +200,8 @@ void DependencyGraph::addDependency(const std::string& from, const std::string& 
     addFile(to);
 
     auto& dependencies = adjacencyList[from];
-    if (std::find(dependencies.begin(), dependencies.end(), to) == dependencies.end()) {
-        dependencies.push_back(to);
-        reverseGraph[to].push_back(from);
+    if (dependencies.insert(to).second) {
+        reverseGraph[to].insert(from);
         fileMetadata[from].dependencyCount = dependencies.size();
     }
 }
@@ -195,14 +222,14 @@ void DependencyGraph::scan() {
         }
 
         for (const auto& entry : fs::recursive_directory_iterator(scanRoot)) {
-            if (!entry.is_regular_file() || isIgnoredPath(entry.path(), ignoreDirs) || !hasExtension(entry.path(), watchExtensions)) {
+            if (!entry.is_regular_file() || isIgnoredPath(entry.path(), ignoreDirs) || !hasExtension(entry.path(), fileExtensions)) {
                 continue;
             }
 
             const std::string filePath = canonicalPath(entry.path());
             addFile(filePath);
             for (const auto& dependency : extractIncludes(filePath)) {
-                if (fs::exists(dependency) && hasExtension(dependency, watchExtensions) && !isIgnoredPath(dependency, ignoreDirs)) {
+                if (fs::exists(dependency) && hasExtension(dependency, fileExtensions) && !isIgnoredPath(dependency, ignoreDirs)) {
                     addDependency(filePath, dependency);
                 }
             }
@@ -235,12 +262,14 @@ void DependencyGraph::saveCache(const std::string& cachePath) const {
     out << "  \"generatedAt\": \"" << nowIsoTime() << "\",\n";
     out << "  \"files\": [\n";
 
+    const auto paths = sortedKeys(fileMetadata);
     std::size_t index = 0;
-    for (const auto& [path, info] : fileMetadata) {
+    for (const auto& path : paths) {
+        const auto& info = fileMetadata.at(path);
         out << "    { \"path\": \"" << jsonEscape(path) << "\", \"hash\": \"" << info.hash
             << "\", \"lastModified\": " << info.lastModified
             << ", \"dependencyCount\": " << info.dependencyCount << " }";
-        if (++index < fileMetadata.size()) {
+        if (++index < paths.size()) {
             out << ",";
         }
         out << "\n";
@@ -250,8 +279,11 @@ void DependencyGraph::saveCache(const std::string& cachePath) const {
     out << "  \"dependencies\": [\n";
 
     bool first = true;
-    for (const auto& [from, deps] : adjacencyList) {
-        for (const auto& to : deps) {
+    for (const auto& from : sortedGraphKeys(adjacencyList)) {
+        const auto& deps = adjacencyList.at(from);
+        std::vector<std::string> sortedDeps(deps.begin(), deps.end());
+        std::sort(sortedDeps.begin(), sortedDeps.end());
+        for (const auto& to : sortedDeps) {
             if (!first) {
                 out << ",\n";
             }
@@ -266,12 +298,22 @@ void DependencyGraph::saveCache(const std::string& cachePath) const {
 
 std::vector<std::string> DependencyGraph::getDependencies(const std::string& filePath) const {
     const auto it = adjacencyList.find(filePath);
-    return it == adjacencyList.end() ? std::vector<std::string>{} : it->second;
+    if (it == adjacencyList.end()) {
+        return {};
+    }
+    std::vector<std::string> values(it->second.begin(), it->second.end());
+    std::sort(values.begin(), values.end());
+    return values;
 }
 
 std::vector<std::string> DependencyGraph::getDependents(const std::string& filePath) const {
     const auto it = reverseGraph.find(filePath);
-    return it == reverseGraph.end() ? std::vector<std::string>{} : it->second;
+    if (it == reverseGraph.end()) {
+        return {};
+    }
+    std::vector<std::string> values(it->second.begin(), it->second.end());
+    std::sort(values.begin(), values.end());
+    return values;
 }
 
 std::vector<std::string> DependencyGraph::detectChangedFiles() {
@@ -319,8 +361,10 @@ BuildPlan DependencyGraph::createBuildPlan(const std::vector<std::string>& chang
     plan.changedFiles = changedFiles;
     plan.scanSeconds = scanSeconds;
     plan.lastScanTime = nowIsoTime();
+    const auto paths = sortedKeys(fileMetadata);
 
-    for (const auto& [path, info] : fileMetadata) {
+    for (const auto& path : paths) {
+        const auto& info = fileMetadata.at(path);
         if (isCompilableSource(path)) {
             plan.totalFiles++;
             if (info.affected) {
@@ -344,9 +388,20 @@ BuildPlan DependencyGraph::createBuildPlan(const std::vector<std::string>& chang
 void DependencyGraph::exportDashboardData(const BuildPlan& plan, const std::string& outputPath, const std::string& graphPath) const {
     fs::create_directories(fs::path(outputPath).parent_path());
     fs::create_directories(fs::path(graphPath).parent_path());
+    const auto paths = sortedKeys(fileMetadata);
 
     std::ofstream out(outputPath, std::ios::trunc);
     out << "{\n";
+    out << "  \"schemaVersion\": 2,\n";
+    out << "  \"project\": {\n";
+    out << "    \"name\": \"" << jsonEscape(plan.projectName) << "\",\n";
+    out << "    \"root\": \"" << jsonEscape(plan.projectRoot.empty() ? projectRoot : plan.projectRoot) << "\",\n";
+    out << "    \"scanMode\": \"single_run\"\n";
+    out << "  },\n";
+    out << "  \"artifacts\": {\n";
+    out << "    \"status\": \"" << jsonEscape(displayPathFromRoot((fs::path(projectRoot) / ".optibuild" / "status.json").string(), projectRoot)) << "\",\n";
+    out << "    \"cache\": \"" << jsonEscape(displayPathFromRoot((fs::path(projectRoot) / ".optibuild" / "cache.json").string(), projectRoot)) << "\"\n";
+    out << "  },\n";
     out << "  \"summary\": {\n";
     out << "    \"total_files\": " << fileMetadata.size() << ",\n";
     out << "    \"source_files\": " << plan.totalFiles << ",\n";
@@ -356,8 +411,20 @@ void DependencyGraph::exportDashboardData(const BuildPlan& plan, const std::stri
     out << "    \"skipped_files\": " << plan.skippedFiles << ",\n";
     out << "    \"optimization\": " << std::fixed << std::setprecision(2) << plan.reductionPercentage << ",\n";
     out << "    \"time_taken\": " << std::setprecision(4) << plan.scanSeconds << ",\n";
-    out << "    \"last_scan_time\": \"" << jsonEscape(plan.lastScanTime) << "\"\n";
+    out << "    \"last_scan_time\": \"" << jsonEscape(plan.lastScanTime) << "\",\n";
+    out << "    \"dependency_edges\": " << edgeCount(adjacencyList) << "\n";
     out << "  },\n";
+
+    auto writeRelativeArray = [&](const std::string& key, const std::vector<std::string>& values) {
+        out << "  \"" << key << "\": [";
+        for (std::size_t i = 0; i < values.size(); ++i) {
+            out << (i == 0 ? "\n" : ",\n") << "    \"" << jsonEscape(displayPathFromRoot(values[i], projectRoot)) << "\"";
+        }
+        out << (values.empty() ? "" : "\n") << "  ],\n";
+    };
+
+    writeRelativeArray("changed_files", plan.changedFiles);
+    writeRelativeArray("affected_files", plan.affectedFiles);
 
     out << "  \"built_files\": [";
     for (std::size_t i = 0; i < plan.rebuildFiles.size(); ++i) {
@@ -367,12 +434,13 @@ void DependencyGraph::exportDashboardData(const BuildPlan& plan, const std::stri
 
     out << "  \"files\": [\n";
     std::size_t index = 0;
-    for (const auto& [path, info] : fileMetadata) {
+    for (const auto& path : paths) {
+        const auto& info = fileMetadata.at(path);
         const std::string status = info.changed ? "changed" : (info.affected ? "affected" : "skipped");
         out << "    { \"path\": \"" << jsonEscape(displayPathFromRoot(path, projectRoot)) << "\", \"status\": \"" << status
             << "\", \"dependencyCount\": " << info.dependencyCount
             << ", \"hash\": \"" << info.hash << "\" }";
-        if (++index < fileMetadata.size()) {
+        if (++index < paths.size()) {
             out << ",";
         }
         out << "\n";
@@ -381,12 +449,16 @@ void DependencyGraph::exportDashboardData(const BuildPlan& plan, const std::stri
     out << "}\n";
 
     std::ofstream graphOut(graphPath, std::ios::trunc);
-    graphOut << "{\n  \"nodes\": [\n";
+    graphOut << "{\n";
+    graphOut << "  \"schemaVersion\": 2,\n";
+    graphOut << "  \"directed\": true,\n";
+    graphOut << "  \"nodes\": [\n";
     index = 0;
-    for (const auto& [path, info] : fileMetadata) {
+    for (const auto& path : paths) {
+        const auto& info = fileMetadata.at(path);
         const std::string status = info.changed ? "changed" : (info.affected ? "affected" : "skipped");
         graphOut << "    { \"id\": \"" << jsonEscape(displayPathFromRoot(path, projectRoot)) << "\", \"status\": \"" << status << "\" }";
-        if (++index < fileMetadata.size()) {
+        if (++index < paths.size()) {
             graphOut << ",";
         }
         graphOut << "\n";
@@ -394,8 +466,11 @@ void DependencyGraph::exportDashboardData(const BuildPlan& plan, const std::stri
     graphOut << "  ],\n  \"edges\": [\n";
 
     bool first = true;
-    for (const auto& [from, deps] : adjacencyList) {
-        for (const auto& to : deps) {
+    for (const auto& from : sortedGraphKeys(adjacencyList)) {
+        const auto& deps = adjacencyList.at(from);
+        std::vector<std::string> sortedDeps(deps.begin(), deps.end());
+        std::sort(sortedDeps.begin(), sortedDeps.end());
+        for (const auto& to : sortedDeps) {
             if (!first) {
                 graphOut << ",\n";
             }
@@ -410,6 +485,7 @@ void DependencyGraph::exportDashboardData(const BuildPlan& plan, const std::stri
 void DependencyGraph::exportStatusData(const BuildPlan& plan, const std::string& statusPath, const std::vector<std::string>& events) const {
     fs::create_directories(fs::path(statusPath).parent_path());
     std::ofstream out(statusPath, std::ios::trunc);
+    const auto paths = sortedKeys(fileMetadata);
 
     auto writeArray = [&](const std::string& key, const std::vector<std::string>& values, bool comma) {
         out << "  \"" << key << "\": [";
@@ -422,11 +498,14 @@ void DependencyGraph::exportStatusData(const BuildPlan& plan, const std::string&
     };
 
     out << "{\n";
+    out << "  \"schemaVersion\": 2,\n";
     out << "  \"projectName\": \"" << jsonEscape(plan.projectName) << "\",\n";
     out << "  \"projectRoot\": \"" << jsonEscape(plan.projectRoot.empty() ? projectRoot : plan.projectRoot) << "\",\n";
     out << "  \"lastScanTime\": \"" << jsonEscape(plan.lastScanTime) << "\",\n";
     out << "  \"watchMode\": " << (plan.watchMode ? "true" : "false") << ",\n";
     out << "  \"totalFiles\": " << fileMetadata.size() << ",\n";
+    out << "  \"sourceFiles\": " << plan.totalFiles << ",\n";
+    out << "  \"dependencyEdges\": " << edgeCount(adjacencyList) << ",\n";
     writeArray("changedFiles", plan.changedFiles, true);
     writeArray("affectedFiles", plan.affectedFiles, true);
     writeArray("rebuildFiles", plan.rebuildFiles, true);
@@ -436,19 +515,24 @@ void DependencyGraph::exportStatusData(const BuildPlan& plan, const std::string&
     out << "  \"testStatus\": \"" << jsonEscape(plan.testStatus) << "\",\n";
     out << "  \"files\": [\n";
     std::size_t index = 0;
-    for (const auto& [path, info] : fileMetadata) {
+    for (const auto& path : paths) {
+        const auto& info = fileMetadata.at(path);
         const std::string status = info.changed ? "changed" : (info.affected ? "affected" : "skipped");
         out << "    { \"path\": \"" << jsonEscape(displayPathFromRoot(path, projectRoot))
-            << "\", \"status\": \"" << status << "\", \"dependencyCount\": " << info.dependencyCount << " }";
-        if (++index < fileMetadata.size()) out << ",";
+            << "\", \"status\": \"" << status << "\", \"dependencyCount\": " << info.dependencyCount
+            << ", \"hash\": \"" << info.hash << "\" }";
+        if (++index < paths.size()) out << ",";
         out << "\n";
     }
     out << "  ],\n";
     out << "  \"graph\": {\n";
     out << "    \"edges\": [\n";
     bool first = true;
-    for (const auto& [from, deps] : adjacencyList) {
-        for (const auto& to : deps) {
+    for (const auto& from : sortedGraphKeys(adjacencyList)) {
+        const auto& deps = adjacencyList.at(from);
+        std::vector<std::string> sortedDeps(deps.begin(), deps.end());
+        std::sort(sortedDeps.begin(), sortedDeps.end());
+        for (const auto& to : sortedDeps) {
             if (!first) out << ",\n";
             out << "      { \"from\": \"" << jsonEscape(displayPathFromRoot(from, projectRoot))
                 << "\", \"to\": \"" << jsonEscape(displayPathFromRoot(to, projectRoot)) << "\" }";
@@ -478,7 +562,7 @@ void DependencyGraph::printSummary(const BuildPlan& plan) const {
     std::cout << "Rebuild reduction: " << std::fixed << std::setprecision(2) << plan.reductionPercentage << "%\n";
 }
 
-const std::unordered_map<std::string, std::vector<std::string>>& DependencyGraph::dependencies() const {
+const std::unordered_map<std::string, std::unordered_set<std::string>>& DependencyGraph::dependencies() const {
     return adjacencyList;
 }
 

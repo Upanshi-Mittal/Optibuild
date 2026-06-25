@@ -1,25 +1,27 @@
 {
+  "schemaVersion": 2,
+  "directed": true,
   "nodes": [
+    { "id": "src/auth/auth.cpp", "status": "affected" },
+    { "id": "src/auth/auth.h", "status": "changed" },
     { "id": "src/billing/billing.cpp", "status": "skipped" },
     { "id": "src/billing/billing.h", "status": "skipped" },
-    { "id": "src/main.cpp", "status": "skipped" },
     { "id": "src/database/database.cpp", "status": "skipped" },
-    { "id": "src/utils/utils.h", "status": "skipped" },
-    { "id": "src/utils/utils.cpp", "status": "skipped" },
-    { "id": "src/auth/auth.cpp", "status": "skipped" },
     { "id": "src/database/database.h", "status": "skipped" },
-    { "id": "src/auth/auth.h", "status": "skipped" }
+    { "id": "src/main.cpp", "status": "affected" },
+    { "id": "src/utils/utils.cpp", "status": "skipped" },
+    { "id": "src/utils/utils.h", "status": "skipped" }
   ],
   "edges": [
+    { "from": "src/auth/auth.cpp", "to": "src/auth/auth.h" },
+    { "from": "src/auth/auth.cpp", "to": "src/database/database.h" },
+    { "from": "src/auth/auth.cpp", "to": "src/utils/utils.h" },
     { "from": "src/billing/billing.cpp", "to": "src/billing/billing.h" },
     { "from": "src/billing/billing.cpp", "to": "src/database/database.h" },
     { "from": "src/billing/billing.cpp", "to": "src/utils/utils.h" },
+    { "from": "src/database/database.cpp", "to": "src/database/database.h" },
     { "from": "src/main.cpp", "to": "src/auth/auth.h" },
     { "from": "src/main.cpp", "to": "src/billing/billing.h" },
-    { "from": "src/database/database.cpp", "to": "src/database/database.h" },
-    { "from": "src/utils/utils.cpp", "to": "src/utils/utils.h" },
-    { "from": "src/auth/auth.cpp", "to": "src/auth/auth.h" },
-    { "from": "src/auth/auth.cpp", "to": "src/database/database.h" },
-    { "from": "src/auth/auth.cpp", "to": "src/utils/utils.h" }
+    { "from": "src/utils/utils.cpp", "to": "src/utils/utils.h" }
   ]
 }
